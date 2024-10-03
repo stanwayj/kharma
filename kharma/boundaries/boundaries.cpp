@@ -757,8 +757,9 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
                             cmin(dir-1, k, j, i) = -m::min(cmin(dir-1, k, j, i), cminR);
 
                             // Use LLF flux
+                            // Trying with HLLE flux
                             PLOOP {
-                                F.flux(dir, ip, k, j, i) = Flux::llf(Fl_all(ip, k, j, i), Fr_all(ip, k, j, i),
+                                F.flux(dir, ip, k, j, i) = Flux::hlle(Fl_all(ip, k, j, i), Fr_all(ip, k, j, i),
                                                                     cmax(dir-1, k, j, i), cmin(dir-1, k, j, i),
                                                                     Ul_all(ip, k, j, i), Ur_all(ip, k, j, i)) * 0.5;
                             }
@@ -804,8 +805,9 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
                             cmin(bdir-1, k, j, i) = -m::min(cmin(bdir-1, k, j, i), cminR);
 
                             // Use LLF flux
+                            // Try with HLLE flux
                             PLOOP {
-                                F.flux(bdir, ip, k, j, i) = Flux::llf(Fl_all(ip, k, j, i), Fr_all(ip, k, j, i),
+                                F.flux(bdir, ip, k, j, i) = Flux::hlle(Fl_all(ip, k, j, i), Fr_all(ip, k, j, i),
                                                                     cmax(bdir-1, k, j, i), cmin(bdir-1, k, j, i),
                                                                     Ul_all(ip, k, j, i), Ur_all(ip, k, j, i));
                                 // Reduce the X1 flux in a semi-consistent way
