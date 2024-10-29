@@ -413,9 +413,9 @@ void KBoundaries::ApplyBoundary(std::shared_ptr<MeshBlockData<Real>> &rc, IndexD
         if (params.Get<bool>("cancel_U3_" + bname) && full_grmhd_boundary) {
             GRMHD::CancelBoundaryU3(rc.get(), domain, coarse);
         }
-        if (params.Get<bool>("cancel_T3_" + bname) && full_grmhd_boundary) {
-            GRMHD::CancelBoundaryT3(rc.get(), domain, coarse);
-        }
+    //     if (params.Get<bool>("cancel_T3_" + bname) && full_grmhd_boundary) {
+    //         GRMHD::CancelBoundaryT3(rc.get(), domain, coarse);
+    //     }
     }
 
     // Always call through to the registered boundary function
