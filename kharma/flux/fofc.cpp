@@ -39,7 +39,8 @@
 
 using namespace parthenon;
 
-// Very bad definition. TODO get rid of this eventually
+// Very bad definitions. TODO get rid of them eventually
+#define NPRIM_MAX 12
 #define PLOOP for(int ip=0; ip < nvar; ++ip)
 
 TaskStatus Flux::MarkFOFC(MeshData<Real> *guess)

@@ -1,6 +1,5 @@
 # SANE model, but refined
-# Included to show example of a mesh
-# refinement prescription
+# Needs new B field init
 
 <parthenon/job>
 problem_id = torus
@@ -88,4 +87,3 @@ dt = 100.0
 <parthenon/output2>
 file_type = hst
 dt = 0.1
-variables = all_reductions

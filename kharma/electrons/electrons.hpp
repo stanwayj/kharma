@@ -71,15 +71,7 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
  * 
  * Function in this package: Initialize electron temperatures when setting up the problem. Trivial.
  */
-TaskStatus InitElectrons(MeshBlockData<Real> *rc, ParameterInput *pin);
-inline TaskStatus MeshInitElectrons(MeshData<Real> *md, ParameterInput *pin)
-{
-    Flag("MeshApplyElectronHeating");
-    for (int i=0; i < md->NumBlocks(); ++i)
-        InitElectrons(md->GetBlockData(i).get(), pin);
-    EndFlag();
-    return TaskStatus::complete;
-}
+TaskStatus InitElectrons(std::shared_ptr<MeshBlockData<Real>>& rc, ParameterInput *pin);
 
 /**
  * Any implementation of UtoP needs to take an IndexDomain enum and boundary "coarse" boolean.

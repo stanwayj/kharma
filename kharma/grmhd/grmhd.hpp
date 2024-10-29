@@ -54,10 +54,21 @@ std::shared_ptr<KHARMAPackage> Initialize(ParameterInput *pin, std::shared_ptr<P
  * This is just for a particular MeshBlock/package, so don't rely on it
  * Parthenon will take the minimum and put it in pmy_mesh->dt
  */
-Real EstimateTimestep(MeshData<Real> *md);
+Real EstimateTimestep(MeshBlockData<Real> *rc);
+inline Real MeshEstimateTimestep(MeshData<Real> *md)
+{
+    Flag("MeshEstimateTimestep");
+    Real ndt = std::numeric_limits<Real>::max();
+    for (int i=0; i < md->NumBlocks(); ++i) {
+        double dtb = EstimateTimestep(md->GetBlockData(i).get());
+        if (dtb < ndt) ndt = dtb;
+    }
+    EndFlag();
+    return ndt;
+}
 
 // Internal version for the light phase speed crossing time of smallest zone
-Real EstimateRadiativeTimestep(MeshData<Real> *md);
+Real EstimateRadiativeTimestep(MeshBlockData<Real> *rc);
 
 /**
  * Return a tag per-block indicating whether to refine it
@@ -83,16 +94,5 @@ TaskStatus PostStepDiagnostics(const SimTime& tm, MeshData<Real> *rc);
  * simulating polar velocity advecting together
  */
 void CancelBoundaryU3(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse);
-
-/**
- * Same but for the conserved angular momentum T3
- */
-void CancelBoundaryT3(MeshBlockData<Real> *rc, IndexDomain domain, bool coarse);
-
-/**
- * Update the signal speeds in zones affected by the above operations.
- * This is important to stay under the Courant limit at times
- */
-void UpdateAveragedCtop(MeshData<Real> *md);
 
 }

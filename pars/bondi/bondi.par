@@ -1,5 +1,6 @@
 # Bondi flow problem
 # Model a spherically symmetric, unmagnetized inflow
+# Uses more MeshBlocks than necessary, for debugging
 
 <parthenon/job>
 problem_id = bondi
@@ -13,9 +14,8 @@ nx2 = 128
 nx3 = 1
 
 <parthenon/meshblock>
-# We use more MeshBlocks than necessary, for debugging
-nx1 = 32
-nx2 = 32
+nx1 = 128
+nx2 = 128
 nx3 = 1
 
 <coordinates>
@@ -57,12 +57,9 @@ disable_floors = true
 check_inflow_outer_x1 = false
 
 <b_field>
-# No field.
+# No field
+type = none
 solver = none
-# Radial monopole, still stationary
-#solver = face_ct
-#type = monopole_cube
-#B10 = 1
 
 <debug>
 verbose = 0

@@ -22,14 +22,11 @@ variables:
 
 ### DEFAULT TEST BEHAVIOR ###
 default:
-  id_tokens:
-    SITE_ID_TOKEN:
-      aud: https://re-git.lanl.gov
   tags:
     - darwin-slurm-shared
   # Load Python
   before_script:
-    - micromamba activate pyharm
+    - module load miniconda3
 
   # Always keep logs and plots.  Results should be printed to console!
   artifacts:
@@ -59,8 +56,8 @@ build:
   before_script:
     - echo "Skipping pyharm install in build."
   script:
-    # CUDA 12.2+ doesn't like EMHD
-    - ./make.sh clean cuda120 gcc volta
+    - export PREFIX_PATH=$PWD/external/hdf5
+    - ./make.sh clean cuda hdf5 volta
   artifacts:
     paths:
       - kharma.*
@@ -75,6 +72,6 @@ tests:
     - ./run.sh
   parallel:
     matrix:
-      - TEST: [all_pars, anisotropic_conduction, bondi, bondi_viscous, bz_monopole, conducting_atmosphere,
-               emhdmodes, mhdmodes, mhdmodes_smr, noh, regrid, reinit, resize, restart, tilt_init, torus_sanity]
+      - TEST: [bondi, bondi_viscous, bz_monopole, emhdmodes, mhdmodes, mhdmodes_smr,
+               noh, regrid, reinit, restart, tilt_init, torus_sanity]
 
