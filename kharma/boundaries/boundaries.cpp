@@ -792,7 +792,8 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
                         }
                     );
 
-                    // X1 face here.
+                    // Trying factor on X1 face as it is triangular.
+                    // Oversteps courant condition if not included.
                     pmb->par_for(
                         "excise_flux_" + bname, b.ks, b.ke, j_cell, j_cell, b.is, b.ie,
                         KOKKOS_LAMBDA(const int &k, const int &j, const int &i) {
@@ -842,9 +843,6 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
                         
                         }
                     );
-
-                    // This commented out section is the old method.
-                    // Keeping for now, may prove useful. crtl + K + C for large comments, crtl + K + U to undo large comments.
 
                     // Replace existing X3 fluxes in last row with true half-cell versions
                     // const int dir = X3DIR;
