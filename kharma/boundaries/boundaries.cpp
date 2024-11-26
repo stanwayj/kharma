@@ -716,22 +716,88 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
                     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
                     const auto& G = pmb->coords;
                     const int nvar = F.GetDim(4);
-                    const Loci loc = (binner) ? Loci::outer_half : Loci::inner_half;
+                    const Loci loc = (binner) ? Loci::outer_half : Loci::inner_half;        // This is from the old boundaries.
 
                     const IndexRange3 bi = KDomain::GetRange(rc, IndexDomain::interior, CC);
                     // Cell center of our two which is actually on grid
-                    const int j_cell = (binner) ? b.js : b.js - 1;
+                    const int j_cell = (binner) ? b.js : b.js - 1;       
 
-                    //Attempting one-sided fluxes, LLF flux with one of Fl/Fr=zero for X2.
-                    const int dir = X2DIR;
+                    const int Nk3p = (bi.ke - bi.ks + 1);
+                    const int Nk3p2 = Nk3p/2;
+                    const int ksp = bi.ks;
+
+                    //Attempting one-sided fluxes, LLF flux with one of Fl/Fr=zero for X3.
                     pmb->par_for(
-                        "excise_flux_" + bname, b.ks, b.ke, b.js, b.je, b.is, b.ie,
+                        "excise_flux_" + bname, b.ks, b.ke, j_cell, j_cell, b.is, b.ie,
                         KOKKOS_LAMBDA(const int &k, const int &j, const int &i) {
-                        // Find when we flip between Fl/Fr at the pole.
-                        const int Nk3p = (bi.ke - bi.ks + 1);
-                        const int Nk3p2 = Nk3p/2;
-                        const int flip_k = bi.ks + Nk3p2 - 1;
+                        const int dir = X3DIR;
+                        const Loci loc = Loci::face3;
 
+                        // Find when we flip between Fl/Fr at the pole.
+                        const int flip_k = ((k - ksp + Nk3p2) % Nk3p) + ksp;
+
+                        // "Reconstruct" at cell midplanes: equivalent to donor-cell
+                        const int jn = (binner) ? j+1 : j-1;
+                        PLOOP Pl_all(ip, k, j, i) = P_all(ip, k, jn, i);
+                        PLOOP Pr_all(ip, k, j, i) = P_all(ip, k, j, i);
+
+                        FourVectors Dtmp;
+                        // Left
+                        GRMHD::calc_4vecs(G, Pl_all, m_p, k, j, i, loc, Dtmp);
+                        Flux::prim_to_flux(G, Pl_all, m_p, Dtmp, emhd_params, gam, k, j, i, 0, Ul_all, m_u, loc);
+                        Flux::prim_to_flux(G, Pl_all, m_p, Dtmp, emhd_params, gam, k, j, i, dir, Fl_all, m_u, loc);
+                        // Magnetosonic speeds
+                        Real cmaxL, cminL;
+                        Flux::vchar_global(G, Pl_all, m_p, Dtmp, gam, emhd_params, k, j, i, loc, dir, cmaxL, cminL);
+                        // Record speeds
+                        cmax(dir-1, k, j, i) = m::max(0., cmaxL);
+                        cmin(dir-1, k, j, i) = m::min(0., cminL);
+
+                        // Right
+                        GRMHD::calc_4vecs(G, Pr_all, m_p, k, j, i, loc, Dtmp);
+                        Flux::prim_to_flux(G, Pr_all, m_p, Dtmp, emhd_params, gam, k, j, i, 0, Ur_all, m_u, loc);
+                        Flux::prim_to_flux(G, Pr_all, m_p, Dtmp, emhd_params, gam, k, j, i, dir, Fr_all, m_u, loc);
+                        // Magnetosonic speeds
+                        Real cmaxR, cminR;
+                        Flux::vchar_global(G, Pr_all, m_p, Dtmp, gam, emhd_params, k, j, i, loc, dir, cmaxR, cminR);
+
+                        // Reset cmax/cmin based on our flux
+                        cmax(dir-1, k, j, i) =  m::max(cmax(dir-1, k, j, i), cmaxR);
+                        cmin(dir-1, k, j, i) = -m::min(cmin(dir-1, k, j, i), cminR);   
+
+                        //Fr/Ur/Pr=0
+                        if (k > flip_k) {
+                            PLOOP {
+                                Pl_all(ip, k, jn, i) = 0.;
+                                Fl_all(ip, k, jn, i) = 0.;
+                                Ul_all(ip, k, jn, i) = 0.;
+                            }
+                        }
+                        // Fl/Ul/Pl=0
+                        else {
+                            PLOOP {
+                                Pr_all(ip, k, jn, i) = 0.;
+                                Fr_all(ip, k, jn, i) = 0.;
+                                Ur_all(ip, k, jn, i) = 0.;
+                            }               
+                        }
+
+                        // Use LLF flux
+                        PLOOP {
+                            F.flux(dir, ip, k, j, i) = Flux::llf(Fl_all(ip, k, j, i), Fr_all(ip, k, j, i),
+                                                                cmax(dir-1, k, j, i), cmin(dir-1, k, j, i),
+                                                                Ul_all(ip, k, j, i), Ur_all(ip, k, j, i));   
+                            
+                            }
+                        }
+                    );
+
+                    // X1 face here.
+                    pmb->par_for(
+                        "excise_flux_" + bname, b.ks, b.ke, j_cell, j_cell, b.is, b.ie,
+                        KOKKOS_LAMBDA(const int &k, const int &j, const int &i) {
+                        const int dir = X1DIR;
+                        const Loci loc = Loci::face1;
                         FourVectors Dtmp;
                         // Left
                         GRMHD::calc_4vecs(G, Pl_all, m_p, k, j, i, loc, Dtmp);
@@ -756,31 +822,26 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
                         cmax(dir-1, k, j, i) =  m::max(cmax(dir-1, k, j, i), cmaxR);
                         cmin(dir-1, k, j, i) = -m::min(cmin(dir-1, k, j, i), cminR);
 
-                        // Fr/Ur/Pr=0
-                        if (k > flip_k) {
-                            PLOOP Pl_all(ip, k, j, i) = 0.;
-                            PLOOP Fl_all(ip, k, j, i) = 0.;
-                            PLOOP Ul_all(ip, k, j, i) = 0.;
-                        }
-                        // Fl/Ul/Rl=0
-                        else {
-                            PLOOP Pr_all(ip, k, j, i) = 0.;
-                            PLOOP Fr_all(ip, k, j, i) = 0.;
-                            PLOOP Ur_all(ip, k, j, i) = 0.;
+                        // Testing which is required, I think only ii
+                        int ii = (bdir == 1) ? i - 1 : i;
+                        //int jj = (bdir == 2) ? j - 1 : j;
+                        //int kk = (bdir == 3) ? k - 1 : k;
+
+                        PLOOP Pl_all(ip, k, j, i) = P_all(ip, k, j, ii);
+                        PLOOP Pr_all(ip, k, j, i) = P_all(ip, k, j, i);
+
+                        // Use LLF flux
+                        PLOOP {
+                            F.flux(dir, ip, k, j, i) = Flux::llf(Fl_all(ip, k, j, i), Fr_all(ip, k, j, i),
+                                                                cmax(dir-1, k, j, i), cmin(dir-1, k, j, i),
+                                                                Ul_all(ip, k, j, i), Ur_all(ip, k, j, i)) * 0.5;                       
                         }
 
-                    // This is taken from the original function, but with the factor of 2 removed
-                    // I think it will work, may need small changes.                    
-
-                             // Use LLF flux
-                             PLOOP {
-                                 F.flux(dir, ip, k, j, i) = Flux::llf(Fl_all(ip, k, j, i), Fr_all(ip, k, j, i),
-                                                                     cmax(dir-1, k, j, i), cmin(dir-1, k, j, i),
-                                                                     Ul_all(ip, k, j, i), Ur_all(ip, k, j, i));                       
-                             }
+                        cmax(bdir-1, k, j, i) *= 2;
+                        cmin(bdir-1, k, j, i) *= 2;                          
+                        
                         }
                     );
-                    
 
                     // This commented out section is the old method.
                     // Keeping for now, may prove useful. crtl + K + C for large comments, crtl + K + U to undo large comments.
@@ -824,6 +885,7 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
                     //             F.flux(dir, ip, k, j, i) = Flux::llf(Fl_all(ip, k, j, i), Fr_all(ip, k, j, i),
                     //                                                 cmax(dir-1, k, j, i), cmin(dir-1, k, j, i),
                     //                                                 Ul_all(ip, k, j, i), Ur_all(ip, k, j, i)) * 0.5;
+
                     //         }
                     //     }
                     // );
@@ -890,9 +952,9 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
                     // Then average to make absolutely sure fluxes match
                     // TODO only for X2 bound currently!
                     // Must pay attention that only physical zones are touched: no averaging w/ghosts!
-                    const int Nk3p = (bi.ke - bi.ks + 1);
-                    const int Nk3p2 = Nk3p/2;
-                    const int ksp = bi.ks;
+                    //const int Nk3p = (bi.ke - bi.ks + 1);
+                    //const int Nk3p2 = Nk3p/2;
+                    //const int ksp = bi.ks;
                     // Run over X1 *interior* on the X2 face, for half the *interior* X3 range
                     pmb->par_for(
                         "average_excised_flux_" + bname, 0, F.GetDim(4)-1, bi.ks, bi.ks + Nk3p2 - 1, b.js, b.je, bi.is, bi.ie,
@@ -965,7 +1027,8 @@ void KBoundaries::AddSource(MeshData<Real> *md, MeshData<Real> *mdudt, IndexDoma
                         KOKKOS_LAMBDA(const int &v, const int &k, const int &j, const int &i) {
                             // Factor of 2 because cell is half-size in fluxdiv
                             // gdet factors move conserved vars at outer cell to the center
-                            dUdt(v, k, j, i) *= 2 * G.gdet(Loci::center, j, i) / G.gdet(loc, j, i);
+                            //dUdt(v, k, j, i) *= 2 * G.gdet(Loci::center, j, i) / G.gdet(loc, j, i);
+                            dUdt(v, k, j, i) *= 1;
                         }
                     );
 
