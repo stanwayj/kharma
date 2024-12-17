@@ -716,244 +716,168 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
                     const Real gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
                     const auto& G = pmb->coords;
                     const int nvar = F.GetDim(4);
-                    const Loci loc = (binner) ? Loci::outer_half : Loci::inner_half;        // This is from the old boundaries.
+                    const Loci loc = (binner) ? Loci::outer_half : Loci::inner_half;        
 
                     const IndexRange3 bi = KDomain::GetRange(rc, IndexDomain::interior, CC);
                     // Cell center of our two which is actually on grid
                     const int j_cell = (binner) ? b.js : b.js - 1;       
 
-                    const int Nk3p = (bi.ke - bi.ks + 1);
-                    const int Nk3p2 = Nk3p/2;
-                    const int ksp = bi.ks;
-
-                    //Attempting one-sided fluxes, LLF flux with one of Fl/Fr=zero for X3.
-                    pmb->par_for(
-                        "excise_flux_" + bname, b.ks, b.ke, j_cell, j_cell, b.is, b.ie,
-                        KOKKOS_LAMBDA(const int &k, const int &j, const int &i) {
-                        const int dir = X3DIR;
-                        const Loci loc = Loci::face3;
-
-                        // Find when we flip between Fl/Fr at the pole.
-                        const int flip_k = ((k - ksp + Nk3p2) % Nk3p) + ksp;
-
-                        // "Reconstruct" at cell midplanes: equivalent to donor-cell
-                        const int jn = (binner) ? j+1 : j-1;
-                        PLOOP Pl_all(ip, k, j, i) = P_all(ip, k, jn, i);
-                        PLOOP Pr_all(ip, k, j, i) = P_all(ip, k, j, i);
-
-                        FourVectors Dtmp;
-                        // Left
-                        GRMHD::calc_4vecs(G, Pl_all, m_p, k, j, i, loc, Dtmp);
-                        Flux::prim_to_flux(G, Pl_all, m_p, Dtmp, emhd_params, gam, k, j, i, 0, Ul_all, m_u, loc);
-                        Flux::prim_to_flux(G, Pl_all, m_p, Dtmp, emhd_params, gam, k, j, i, dir, Fl_all, m_u, loc);
-                        // Magnetosonic speeds
-                        Real cmaxL, cminL;
-                        Flux::vchar_global(G, Pl_all, m_p, Dtmp, gam, emhd_params, k, j, i, loc, dir, cmaxL, cminL);
-                        // Record speeds
-                        cmax(dir-1, k, j, i) = m::max(0., cmaxL);
-                        cmin(dir-1, k, j, i) = m::min(0., cminL);
-
-                        // Right
-                        GRMHD::calc_4vecs(G, Pr_all, m_p, k, j, i, loc, Dtmp);
-                        Flux::prim_to_flux(G, Pr_all, m_p, Dtmp, emhd_params, gam, k, j, i, 0, Ur_all, m_u, loc);
-                        Flux::prim_to_flux(G, Pr_all, m_p, Dtmp, emhd_params, gam, k, j, i, dir, Fr_all, m_u, loc);
-                        // Magnetosonic speeds
-                        Real cmaxR, cminR;
-                        Flux::vchar_global(G, Pr_all, m_p, Dtmp, gam, emhd_params, k, j, i, loc, dir, cmaxR, cminR);
-
-                        // Reset cmax/cmin based on our flux
-                        cmax(dir-1, k, j, i) =  m::max(cmax(dir-1, k, j, i), cmaxR);
-                        cmin(dir-1, k, j, i) = -m::min(cmin(dir-1, k, j, i), cminR);   
-
-                        //Fr/Ur/Pr=0
-                        if (k > flip_k) {
-                            PLOOP {
-                                Pl_all(ip, k, jn, i) = 0.;
-                                Fl_all(ip, k, jn, i) = 0.;
-                                Ul_all(ip, k, jn, i) = 0.;
-                            }
-                        }
-                        // Fl/Ul/Pl=0
-                        else {
-                            PLOOP {
-                                Pr_all(ip, k, jn, i) = 0.;
-                                Fr_all(ip, k, jn, i) = 0.;
-                                Ur_all(ip, k, jn, i) = 0.;
-                            }               
-                        }
-
-                        // Use LLF flux
-                        PLOOP {
-                            F.flux(dir, ip, k, j, i) = Flux::llf(Fl_all(ip, k, j, i), Fr_all(ip, k, j, i),
-                                                                cmax(dir-1, k, j, i), cmin(dir-1, k, j, i),
-                                                                Ul_all(ip, k, j, i), Ur_all(ip, k, j, i));   
-                            
-                            }
-                        }
-                    );
-
-                    // Trying factor on X1 face as it is triangular.
-                    // Oversteps courant condition if not included.
-                    pmb->par_for(
-                        "excise_flux_" + bname, b.ks, b.ke, j_cell, j_cell, b.is, b.ie,
-                        KOKKOS_LAMBDA(const int &k, const int &j, const int &i) {
-                        const int dir = X1DIR;
-                        const Loci loc = Loci::face1;
-                        FourVectors Dtmp;
-                        // Left
-                        GRMHD::calc_4vecs(G, Pl_all, m_p, k, j, i, loc, Dtmp);
-                        Flux::prim_to_flux(G, Pl_all, m_p, Dtmp, emhd_params, gam, k, j, i, 0, Ul_all, m_u, loc);
-                        Flux::prim_to_flux(G, Pl_all, m_p, Dtmp, emhd_params, gam, k, j, i, dir, Fl_all, m_u, loc);
-                        // Magnetosonic speeds
-                        Real cmaxL, cminL;
-                        Flux::vchar_global(G, Pl_all, m_p, Dtmp, gam, emhd_params, k, j, i, loc, dir, cmaxL, cminL);
-                        // Record speeds
-                        cmax(dir-1, k, j, i) = m::max(0., cmaxL);
-                        cmin(dir-1, k, j, i) = m::min(0., cminL);
-
-                        // Right
-                        GRMHD::calc_4vecs(G, Pr_all, m_p, k, j, i, loc, Dtmp);
-                        Flux::prim_to_flux(G, Pr_all, m_p, Dtmp, emhd_params, gam, k, j, i, 0, Ur_all, m_u, loc);
-                        Flux::prim_to_flux(G, Pr_all, m_p, Dtmp, emhd_params, gam, k, j, i, dir, Fr_all, m_u, loc);
-                        // Magnetosonic speeds
-                        Real cmaxR, cminR;
-                        Flux::vchar_global(G, Pr_all, m_p, Dtmp, gam, emhd_params, k, j, i, loc, dir, cmaxR, cminR);
-
-                        // Reset cmax/cmin based on our flux
-                        cmax(dir-1, k, j, i) =  m::max(cmax(dir-1, k, j, i), cmaxR);
-                        cmin(dir-1, k, j, i) = -m::min(cmin(dir-1, k, j, i), cminR);
-
-                        // Testing which is required, I think only ii
-                        int ii = (bdir == 1) ? i - 1 : i;
-                        //int jj = (bdir == 2) ? j - 1 : j;
-                        //int kk = (bdir == 3) ? k - 1 : k;
-
-                        PLOOP Pl_all(ip, k, j, i) = P_all(ip, k, j, ii);
-                        PLOOP Pr_all(ip, k, j, i) = P_all(ip, k, j, i);
-
-                        // Use LLF flux
-                        PLOOP {
-                            F.flux(dir, ip, k, j, i) = Flux::llf(Fl_all(ip, k, j, i), Fr_all(ip, k, j, i),
-                                                                cmax(dir-1, k, j, i), cmin(dir-1, k, j, i),
-                                                                Ul_all(ip, k, j, i), Ur_all(ip, k, j, i)) * 0.5;                       
-                        }
-
-                        cmax(bdir-1, k, j, i) *= 2;
-                        cmin(bdir-1, k, j, i) *= 2;                          
-                        
-                        }
-                    );
-
                     // Replace existing X3 fluxes in last row with true half-cell versions
-                    // const int dir = X3DIR;
-                    // pmb->par_for(
-                    //     "excise_flux_" + bname, b.ks, b.ke, j_cell, j_cell, b.is, b.ie,
-                    //     KOKKOS_LAMBDA(const int &k, const int &j, const int &i) {
-                    //         // Leftover Pl/Pr from X3DIR flux calculation!
-                    //         const int jn = (binner) ? j+1 : j-1;
-                    //         PLOOP Pl_all(ip, k, j, i) = 0.75 * Pl_all(ip, k, j, i) + 0.25 * Pl_all(ip, k, jn, i);
-                    //         PLOOP Pr_all(ip, k, j, i) = 0.75 * Pr_all(ip, k, j, i) + 0.25 * Pr_all(ip, k, jn, i);
+                    const int dir = X3DIR;
+                    pmb->par_for(
+                        "excise_flux_" + bname, b.ks, b.ke, j_cell, j_cell, b.is, b.ie,
+                        KOKKOS_LAMBDA(const int &k, const int &j, const int &i) {
+                            // Leftover Pl/Pr from X3DIR flux calculation!
+                            const int jn = (binner) ? j+1 : j-1;
+                            PLOOP Pl_all(ip, k, j, i) = 0.75 * Pl_all(ip, k, j, i) + 0.25 * Pl_all(ip, k, jn, i);
+                            PLOOP Pr_all(ip, k, j, i) = 0.75 * Pr_all(ip, k, j, i) + 0.25 * Pr_all(ip, k, jn, i);
 
-                    //         FourVectors Dtmp;
-                    //         // Left
-                    //         GRMHD::calc_4vecs(G, Pl_all, m_p, k, j, i, loc, Dtmp);
-                    //         Flux::prim_to_flux(G, Pl_all, m_p, Dtmp, emhd_params, gam, k, j, i, 0, Ul_all, m_u, loc);
-                    //         Flux::prim_to_flux(G, Pl_all, m_p, Dtmp, emhd_params, gam, k, j, i, dir, Fl_all, m_u, loc);
-                    //         // Magnetosonic speeds
-                    //         Real cmaxL, cminL;
-                    //         Flux::vchar_global(G, Pl_all, m_p, Dtmp, gam, emhd_params, k, j, i, loc, dir, cmaxL, cminL);
-                    //         // Record speeds
-                    //         cmax(dir-1, k, j, i) = m::max(0., cmaxL);
-                    //         cmin(dir-1, k, j, i) = m::min(0., cminL);
+                            FourVectors Dtmp;
+                            // Left
+                            GRMHD::calc_4vecs(G, Pl_all, m_p, k, j, i, loc, Dtmp);
+                            Flux::prim_to_flux(G, Pl_all, m_p, Dtmp, emhd_params, gam, k, j, i, 0, Ul_all, m_u, loc);
+                            Flux::prim_to_flux(G, Pl_all, m_p, Dtmp, emhd_params, gam, k, j, i, dir, Fl_all, m_u, loc);
+                            // Magnetosonic speeds
+                            Real cmaxL, cminL;
+                            Flux::vchar_global(G, Pl_all, m_p, Dtmp, gam, emhd_params, k, j, i, loc, dir, cmaxL, cminL);
+                            // Record speeds
+                            cmax(dir-1, k, j, i) = m::max(0., cmaxL);
+                            cmin(dir-1, k, j, i) = m::min(0., cminL);
 
-                    //         // Right
-                    //         GRMHD::calc_4vecs(G, Pr_all, m_p, k, j, i, loc, Dtmp);
-                    //         Flux::prim_to_flux(G, Pr_all, m_p, Dtmp, emhd_params, gam, k, j, i, 0, Ur_all, m_u, loc);
-                    //         Flux::prim_to_flux(G, Pr_all, m_p, Dtmp, emhd_params, gam, k, j, i, dir, Fr_all, m_u, loc);
-                    //         // Magnetosonic speeds
-                    //         Real cmaxR, cminR;
-                    //         Flux::vchar_global(G, Pr_all, m_p, Dtmp, gam, emhd_params, k, j, i, loc, dir, cmaxR, cminR);
+                            // Right
+                            GRMHD::calc_4vecs(G, Pr_all, m_p, k, j, i, loc, Dtmp);
+                            Flux::prim_to_flux(G, Pr_all, m_p, Dtmp, emhd_params, gam, k, j, i, 0, Ur_all, m_u, loc);
+                            Flux::prim_to_flux(G, Pr_all, m_p, Dtmp, emhd_params, gam, k, j, i, dir, Fr_all, m_u, loc);
+                            // Magnetosonic speeds
+                            Real cmaxR, cminR;
+                            Flux::vchar_global(G, Pr_all, m_p, Dtmp, gam, emhd_params, k, j, i, loc, dir, cmaxR, cminR);
 
-                    //         // Reset cmax/cmin based on our flux
-                    //         cmax(dir-1, k, j, i) =  m::max(cmax(dir-1, k, j, i), cmaxR);
-                    //         cmin(dir-1, k, j, i) = -m::min(cmin(dir-1, k, j, i), cminR);
+                            // Reset cmax/cmin based on our flux
+                            cmax(dir-1, k, j, i) =  m::max(cmax(dir-1, k, j, i), cmaxR);
+                            cmin(dir-1, k, j, i) = -m::min(cmin(dir-1, k, j, i), cminR);
 
-                    //         // Use LLF flux
-                    //         PLOOP {
-                    //             F.flux(dir, ip, k, j, i) = Flux::llf(Fl_all(ip, k, j, i), Fr_all(ip, k, j, i),
-                    //                                                 cmax(dir-1, k, j, i), cmin(dir-1, k, j, i),
-                    //                                                 Ul_all(ip, k, j, i), Ur_all(ip, k, j, i)) * 0.5;
+                            // Use LLF flux
+                            PLOOP {
+                                F.flux(dir, ip, k, j, i) = Flux::llf(Fl_all(ip, k, j, i), Fr_all(ip, k, j, i),
+                                                                    cmax(dir-1, k, j, i), cmin(dir-1, k, j, i),
+                                                                    Ul_all(ip, k, j, i), Ur_all(ip, k, j, i)) * 0.5;
 
-                    //         }
-                    //     }
-                    // );
+                            }
+                        }
+                    );
 
-                    // // Replace fluxes through the pole (would be zero) with fluxes through
-                    // // the middle of the cell. Should be general, remember this has 1-zone halo!
-                    // pmb->par_for(
-                    //     "excise_flux_" + bname, b.ks, b.ke, b.js, b.je, b.is, b.ie,
-                    //     KOKKOS_LAMBDA(const int &k, const int &j, const int &i) {
-                    //         // Face i,j,k borders cell with same index and 1 left with index:
-                    //         int kk = (bdir == 3) ? k - 1 : k;
-                    //         int jj = (bdir == 2) ? j - 1 : j;
-                    //         int ii = (bdir == 1) ? i - 1 : i;
+                    // Replace fluxes through the pole (would be zero) with fluxes through
+                    // the middle of the cell. Should be general, remember this has 1-zone halo!
+                    pmb->par_for(
+                        "excise_flux_" + bname, b.ks, b.ke, b.js, b.je, b.is, b.ie,
+                        KOKKOS_LAMBDA(const int &k, const int &j, const int &i) {
+                            // Face i,j,k borders cell with same index and 1 left with index:
+                            int kk = (bdir == 3) ? k - 1 : k;
+                            int jj = (bdir == 2) ? j - 1 : j;
+                            int ii = (bdir == 1) ? i - 1 : i;
 
-                    //         // "Reconstruct" at cell midplanes: equivalent to donor-cell
-                    //         PLOOP Pl_all(ip, k, j, i) = P_all(ip, kk, jj, ii);
-                    //         PLOOP Pr_all(ip, k, j, i) = P_all(ip, k, j, i);
+                            // "Reconstruct" at cell midplanes: equivalent to donor-cell
+                            PLOOP Pl_all(ip, k, j, i) = P_all(ip, kk, jj, ii);
+                            PLOOP Pr_all(ip, k, j, i) = P_all(ip, k, j, i);
 
-                    //         FourVectors Dtmp;
-                    //         // Left
-                    //         GRMHD::calc_4vecs(G, Pl_all, m_p, k, j, i, Loci::center, Dtmp);
-                    //         Flux::prim_to_flux(G, Pl_all, m_p, Dtmp, emhd_params, gam, k, j, i, 0, Ul_all, m_u, Loci::center);
-                    //         Flux::prim_to_flux(G, Pl_all, m_p, Dtmp, emhd_params, gam, k, j, i, bdir, Fl_all, m_u, Loci::center);
-                    //         // Magnetosonic speeds
-                    //         Real cmaxL, cminL;
-                    //         Flux::vchar_global(G, Pl_all, m_p, Dtmp, gam, emhd_params, k, j, i, Loci::center, bdir, cmaxL, cminL);
-                    //         // Record speeds
-                    //         cmax(bdir-1, k, j, i) = m::max(0., cmaxL);
-                    //         cmin(bdir-1, k, j, i) = m::min(0., cminL);
+                            FourVectors Dtmp;
+                            // Left
+                            GRMHD::calc_4vecs(G, Pl_all, m_p, k, j, i, Loci::center, Dtmp);
+                            Flux::prim_to_flux(G, Pl_all, m_p, Dtmp, emhd_params, gam, k, j, i, 0, Ul_all, m_u, Loci::center);
+                            Flux::prim_to_flux(G, Pl_all, m_p, Dtmp, emhd_params, gam, k, j, i, bdir, Fl_all, m_u, Loci::center);
+                            // Magnetosonic speeds
+                            Real cmaxL, cminL;
+                            Flux::vchar_global(G, Pl_all, m_p, Dtmp, gam, emhd_params, k, j, i, Loci::center, bdir, cmaxL, cminL);
+                            // Record speeds
+                            cmax(bdir-1, k, j, i) = m::max(0., cmaxL);
+                            cmin(bdir-1, k, j, i) = m::min(0., cminL);
 
-                    //         // Right
-                    //         GRMHD::calc_4vecs(G, Pr_all, m_p, k, j, i, Loci::center, Dtmp);
-                    //         Flux::prim_to_flux(G, Pr_all, m_p, Dtmp, emhd_params, gam, k, j, i, 0, Ur_all, m_u, Loci::center);
-                    //         Flux::prim_to_flux(G, Pr_all, m_p, Dtmp, emhd_params, gam, k, j, i, bdir, Fr_all, m_u, Loci::center);
-                    //         // Magnetosonic speeds
-                    //         Real cmaxR, cminR;
-                    //         Flux::vchar_global(G, Pr_all, m_p, Dtmp, gam, emhd_params, k, j, i, Loci::center, bdir, cmaxR, cminR);
+                            // Right
+                            GRMHD::calc_4vecs(G, Pr_all, m_p, k, j, i, Loci::center, Dtmp);
+                            Flux::prim_to_flux(G, Pr_all, m_p, Dtmp, emhd_params, gam, k, j, i, 0, Ur_all, m_u, Loci::center);
+                            Flux::prim_to_flux(G, Pr_all, m_p, Dtmp, emhd_params, gam, k, j, i, bdir, Fr_all, m_u, Loci::center);
+                            // Magnetosonic speeds
+                            Real cmaxR, cminR;
+                            Flux::vchar_global(G, Pr_all, m_p, Dtmp, gam, emhd_params, k, j, i, Loci::center, bdir, cmaxR, cminR);
 
-                    //         // Reset cmax/cmin based on our flux
-                    //         cmax(bdir-1, k, j, i) =  m::max(cmax(bdir-1, k, j, i), cmaxR);
-                    //         cmin(bdir-1, k, j, i) = -m::min(cmin(bdir-1, k, j, i), cminR);
+                            // Reset cmax/cmin based on our flux
+                            cmax(bdir-1, k, j, i) =  m::max(cmax(bdir-1, k, j, i), cmaxR);
+                            cmin(bdir-1, k, j, i) = -m::min(cmin(bdir-1, k, j, i), cminR);
 
-                    //         // Use LLF flux
-                    //         PLOOP {
-                    //             F.flux(bdir, ip, k, j, i) = Flux::llf(Fl_all(ip, k, j, i), Fr_all(ip, k, j, i),
-                    //                                                 cmax(bdir-1, k, j, i), cmin(bdir-1, k, j, i),
-                    //                                                 Ul_all(ip, k, j, i), Ur_all(ip, k, j, i));
-                    //             // Reduce the X1 flux in a semi-consistent way
-                    //             const int jc = (binner) ? j_cell + 1 : j_cell;
-                    //             F.flux(X1DIR, ip, k, j_cell, i) *= 0.5
-                    //                 * (G.gdet(Loci::face1, j_cell, i) + G.gdet(Loci::corner, jc, i)) / 2 / G.gdet(Loci::face1, j_cell, i);
-                    //             // This is also a decent guess, but less accurate than recalculating as above
-                    //             // F.flux(X3DIR, ip, k, j_cell, i) *= 0.5
-                    //             //     * G.gdet(loc, j_cell, i) / G.gdet(Loci::center, j_cell, i);
-                    //         }
+                            // Use LLF flux
+                            PLOOP {
+                                F.flux(bdir, ip, k, j, i) = Flux::llf(Fl_all(ip, k, j, i), Fr_all(ip, k, j, i),
+                                                                    cmax(bdir-1, k, j, i), cmin(bdir-1, k, j, i),
+                                                                    Ul_all(ip, k, j, i), Ur_all(ip, k, j, i));
+                                // Reduce the X1 flux in a semi-consistent way
+                                const int jc = (binner) ? j_cell + 1 : j_cell;
+                                F.flux(X1DIR, ip, k, j_cell, i) *= 0.5
+                                    * (G.gdet(Loci::face1, j_cell, i) + G.gdet(Loci::corner, jc, i)) / 2 / G.gdet(Loci::face1, j_cell, i);
+                                // This is also a decent guess, but less accurate than recalculating as above
+                                // F.flux(X3DIR, ip, k, j_cell, i) *= 0.5
+                                //     * G.gdet(loc, j_cell, i) / G.gdet(Loci::center, j_cell, i);
+                            }
 
-                    //         // Account for the half-size in the timestep later
-                    //         cmax(bdir-1, k, j, i) *= 2;
-                    //         cmin(bdir-1, k, j, i) *= 2;
-                    //     }
-                    // );
-                    // Below can stay the same for now, will replace with upwind later...
+                            // Account for the half-size in the timestep later
+                            cmax(bdir-1, k, j, i) *= 2;
+                            cmin(bdir-1, k, j, i) *= 2;
+                        }
+                    );
+
+                    // One-sided LLF flux on the X2 face
+                    pmb->par_for(
+                        "excise_flux_" + bname, b.ks, b.ke, b.js, b.je, b.is, b.ie,
+                        KOKKOS_LAMBDA(const int &k, const int &j, const int &i) {
+                            const int dir = X2DIR;
+                            int jj = (binner) ? j : j+0.5; 
+
+                            // "Reconstruct" at cell midplanes: equivalent to donor-cell
+                            PLOOP Pl_all(ip, k, j, i) = P_all(ip, k, jj, i);
+                            PLOOP Pr_all(ip, k, j, i) = P_all(ip, k, j, i);
+
+                            FourVectors Dtmp;
+                            // Left
+                            GRMHD::calc_4vecs(G, Pl_all, m_p, k, j, i, Loci::center, Dtmp);
+                            Flux::prim_to_flux(G, Pl_all, m_p, Dtmp, emhd_params, gam, k, j, i, 0, Ul_all, m_u, Loci::center);
+                            Flux::prim_to_flux(G, Pl_all, m_p, Dtmp, emhd_params, gam, k, j, i, dir, Fl_all, m_u, Loci::center);
+                            // Magnetosonic speeds
+                            Real cmaxL, cminL;
+                            Flux::vchar_global(G, Pl_all, m_p, Dtmp, gam, emhd_params, k, j, i, Loci::center, dir, cmaxL, cminL);
+                            // Record speeds
+                            cmax(dir-1, k, j, i) = m::max(0., cmaxL);
+                            cmin(dir-1, k, j, i) = m::min(0., cminL);
+
+                            // Right
+                            GRMHD::calc_4vecs(G, Pr_all, m_p, k, j, i, Loci::center, Dtmp);
+                            Flux::prim_to_flux(G, Pr_all, m_p, Dtmp, emhd_params, gam, k, j, i, 0, Ur_all, m_u, Loci::center);
+                            Flux::prim_to_flux(G, Pr_all, m_p, Dtmp, emhd_params, gam, k, j, i, dir, Fr_all, m_u, Loci::center);
+                            // Magnetosonic speeds
+                            Real cmaxR, cminR;
+                            Flux::vchar_global(G, Pr_all, m_p, Dtmp, gam, emhd_params, k, j, i, Loci::center, dir, cmaxR, cminR);
+
+                            // Reset cmax/cmin based on our flux
+                            cmax(dir-1, k, j, i) =  m::max(cmax(dir-1, k, j, i), cmaxR);
+                            cmin(dir-1, k, j, i) = -m::min(cmin(dir-1, k, j, i), cminR);
+
+                            // Use LLF flux
+                            PLOOP {
+                                F.flux(dir, ip, k, j, i) = Flux::llf(Fl_all(ip, k, j, i), Fr_all(ip, k, j, i),
+                                                                    cmax(dir-1, k, j, i), cmin(dir-1, k, j, i),
+                                                                    Ul_all(ip, k, j, i), Ur_all(ip, k, j, i));
+
+                            }                            
+                        }
+                    );
+
+                    // Remove the averaging, will need to replace with larger magnitude flux. Similar function to average.
                     
                     // Then average to make absolutely sure fluxes match
                     // TODO only for X2 bound currently!
                     // Must pay attention that only physical zones are touched: no averaging w/ghosts!
-                    //const int Nk3p = (bi.ke - bi.ks + 1);
-                    //const int Nk3p2 = Nk3p/2;
-                    //const int ksp = bi.ks;
-                    // Run over X1 *interior* on the X2 face, for half the *interior* X3 range
+                    const int Nk3p = (bi.ke - bi.ks + 1);
+                    const int Nk3p2 = Nk3p/2;
+                    const int ksp = bi.ks;
+                    //Run over X1 *interior* on the X2 face, for half the *interior* X3 range
                     pmb->par_for(
                         "average_excised_flux_" + bname, 0, F.GetDim(4)-1, bi.ks, bi.ks + Nk3p2 - 1, b.js, b.je, bi.is, bi.ie,
                         KOKKOS_LAMBDA(const int &v, const int &k, const int &j, const int &i) {
@@ -971,6 +895,31 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
                             F.flux(bdir, v, k, j, i)  = avg;
                         }
                     );
+
+                    // Take the largest of the two fluxes in X2 for one-sided LLF flux method.
+                    // const int Nk3p = (bi.ke - bi.ks + 1);
+                    // const int Nk3p2 = Nk3p/2;
+                    // const int ksp = bi.ks;
+                    // // Run over X1 *interior* on the X2 face, for half the *interior* X3 range.
+                    // // The above statment, and range is taken from previous boundary implamentation, but appropriate - I think.
+                    // // Not working, it is taking all fluxes, not just the X2 fluxes as it should.
+                    // pmb->par_for(
+                    //     "maximum_one_sided_flux" + bname, 0, F.GetDim(4)-1, bi.ks, bi.ks + Nk3p2 - 1, b.js, b.je, bi.is, bi.ie,
+                    //     KOKKOS_LAMBDA(const int &v, const int &k, const int &j, const int &i) {
+                    //         const int ki = ((k - ksp + Nk3p2) % Nk3p) + ksp;
+                    //         Real maxFlux = 0.;
+                    //         if (v == m_u.U2 || v == m_u.B2 || v == m_u.U3 || v == m_u.B3) {
+                    //             // Flux direction reversed, but *coordinate also reverses*
+                    //             maxFlux = m::max(m::abs(F.flux(X2DIR, v, k, j, i)), m::abs(F.flux(X2DIR, v, ki, j, i)));   
+                    //             F.flux(X2DIR, v, ki, j, i) = maxFlux;                   
+                    //         } else {
+                    //             // Only the flux direction reverses
+                    //             maxFlux = m::max(m::abs(F.flux(X2DIR, v, k, j, i)), m::abs(F.flux(X2DIR, v, ki, j, i)));
+                    //             F.flux(X2DIR, v, ki, j, i) = - maxFlux;
+                    //         }
+                    //         F.flux(X2DIR, v, k, j, i)  = maxFlux;
+                    //     }
+                    // );                   
                 }
             }
 
@@ -1025,8 +974,7 @@ void KBoundaries::AddSource(MeshData<Real> *md, MeshData<Real> *mdudt, IndexDoma
                         KOKKOS_LAMBDA(const int &v, const int &k, const int &j, const int &i) {
                             // Factor of 2 because cell is half-size in fluxdiv
                             // gdet factors move conserved vars at outer cell to the center
-                            //dUdt(v, k, j, i) *= 2 * G.gdet(Loci::center, j, i) / G.gdet(loc, j, i);
-                            dUdt(v, k, j, i) *= 1;
+                            dUdt(v, k, j, i) *= 2 * G.gdet(Loci::center, j, i) / G.gdet(loc, j, i);
                         }
                     );
 
