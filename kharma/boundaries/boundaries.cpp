@@ -829,7 +829,7 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
                         "excise_flux_" + bname, b.ks, b.ke, b.js, b.je, b.is, b.ie,
                         KOKKOS_LAMBDA(const int &k, const int &j, const int &i) {
                             const int dir = X2DIR;
-                            int jj = (binner) ? j : j+0.5; 
+                            int jj = (binner) ? j-0.5 : j; 
 
                             // "Reconstruct" at cell midplanes: equivalent to donor-cell
                             PLOOP Pl_all(ip, k, j, i) = P_all(ip, k, jj, i);
@@ -864,7 +864,6 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
                                 F.flux(dir, ip, k, j, i) = Flux::llf(Fl_all(ip, k, j, i), Fr_all(ip, k, j, i),
                                                                     cmax(dir-1, k, j, i), cmin(dir-1, k, j, i),
                                                                     Ul_all(ip, k, j, i), Ur_all(ip, k, j, i));
-
                             }                            
                         }
                     );
@@ -901,8 +900,9 @@ TaskStatus KBoundaries::FixFlux(MeshData<Real> *md)
                     // const int Nk3p2 = Nk3p/2;
                     // const int ksp = bi.ks;
                     // // Run over X1 *interior* on the X2 face, for half the *interior* X3 range.
+
                     // // The above statment, and range is taken from previous boundary implamentation, but appropriate - I think.
-                    // // Not working, it is taking all fluxes, not just the X2 fluxes as it should.
+                    // // Not working, it is taking all fluxes, not just the X2 fluxes as it should, I think. Fix after X2 is working.
                     // pmb->par_for(
                     //     "maximum_one_sided_flux" + bname, 0, F.GetDim(4)-1, bi.ks, bi.ks + Nk3p2 - 1, b.js, b.je, bi.is, bi.ie,
                     //     KOKKOS_LAMBDA(const int &v, const int &k, const int &j, const int &i) {
