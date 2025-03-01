@@ -538,17 +538,17 @@ TaskStatus B_CT::DerefinePoles(MeshData<Real> *md)
                         // starting k-index of the coarse cell
                         const int k_start = k - k_fine;
 
-                        if (j == j_f) {
+                        //if (j == j_f) {
                             // The fine cells have 0 fluxes through the physical-ghost boundaries.
-                            B_avg(F2, 0, k, j, i) = 0.;
-                        } else { // average the fine cells
-                            Real avg = 0.;
-                            for (int ktemp = 0; ktemp < coarse_cell_len; ++ktemp)
-                                avg += B_Uf(F2, 0, k_start + ktemp, j, i) * G.Volume<F2>(k_start + ktemp, j, i);
-                            avg /= coarse_cell_len;
+                            //B_avg(F2, 0, k, j, i) = 0.;
+                        //} else { // average the fine cells
+                        Real avg = 0.;
+                        for (int ktemp = 0; ktemp < coarse_cell_len; ++ktemp)
+                            avg += B_Uf(F2, 0, k_start + ktemp, j, i) * G.Volume<F2>(k_start + ktemp, j, i);
+                        avg /= coarse_cell_len;
 
-                            B_avg(F2, 0, k, j, i) = avg;
-                        }
+                        B_avg(F2, 0, k, j, i) = avg;
+                        //}
                     }
                 );
                 // F3 average
