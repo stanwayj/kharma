@@ -1,26 +1,26 @@
 
-/* 
+/*
  *  File: kharma_driver.cpp
- *  
+ *
  *  BSD 3-Clause License
- *  
+ *
  *  Copyright (c) 2020, AFD Group at UIUC
  *  All rights reserved.
- *  
+ *
  *  Redistribution and use in source and binary forms, with or without
  *  modification, are permitted provided that the following conditions are met:
- *  
+ *
  *  1. Redistributions of source code must retain the above copyright notice, this
  *     list of conditions and the following disclaimer.
- *  
+ *
  *  2. Redistributions in binary form must reproduce the above copyright notice,
  *     this list of conditions and the following disclaimer in the documentation
  *     and/or other materials provided with the distribution.
- *  
+ *
  *  3. Neither the name of the copyright holder nor the names of its
  *     contributors may be used to endorse or promote products derived from
  *     this software without specific prior written permission.
- *  
+ *
  *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
  *  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  *  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -85,8 +85,8 @@ std::shared_ptr<KHARMAPackage> KHARMADriver::Initialize(ParameterInput *pin, std
     // Add a flag if we wish to use ideal variables explicitly evolved as guess for implicit update.
     // GRIM uses the fluid state of the previous (sub-)step.
     // The logic here is that the non-ideal variables do not significantly contribute to the
-    // stress-energy tensor. We can explicitly update the ideal MHD variables and hope that this 
-    // takes us to a region in the parameter space of state variables that 
+    // stress-energy tensor. We can explicitly update the ideal MHD variables and hope that this
+    // takes us to a region in the parameter space of state variables that
     // is close to the true solution. The corrections obtained from the implicit update would then
     // be small corrections.
     Metadata::AddUserFlag("IdealGuess");
@@ -187,14 +187,14 @@ TaskStatus KHARMADriver::SyncAllBounds(std::shared_ptr<MeshData<Real>> &md)
     Flag("SyncAllBounds");
     TaskID t_none(0);
 
-    //MPIBarrier();
+    MPIBarrier();
 
     TaskCollection tc;
     auto tr = tc.AddRegion(1);
     AddBoundarySync(t_none, tr[0], md);
     while (!tr.Execute());
 
-    //MPIBarrier();
+    MPIBarrier();
 
     EndFlag();
     return TaskStatus::complete;
@@ -275,9 +275,7 @@ TaskID KHARMADriver::AddFluxCalculations(TaskID& t_start, TaskList& tl, MeshData
         t_calculate_flux3 = tl.AddTask(t_start_fluxes, Flux::GetFlux<RType::mp5, X3DIR>, md);
         break;
     default:
-        std::cerr << "Reconstruction type not supported!  Main supported reconstructions:" << std::endl
-                  << "donor_cell, linear_mc, weno5" << std::endl;
-        throw std::invalid_argument("Unsupported reconstruction algorithm!");
+        throw std::invalid_argument("Unsupported reconstruction algorithm! Main supported algorithms: linear_mc, weno5, weno5_linear");
     }
     auto t_calc_fluxes = t_calculate_flux1 | t_calculate_flux2 | t_calculate_flux3;
 
@@ -377,9 +375,12 @@ TaskID KHARMADriver::AddStateUpdate(TaskID& t_start, TaskList& tl, MeshData<Real
     auto t_copy_prims = t_update;
     auto pmb0  = md_full_step_init->GetBlockData(0)->GetBlockPointer();
     auto& pkgs = pmb0->packages.AllPackages();
+
+    // If we're explicitly evolving, UtoP needs a guess
+    // TODO why is this necessary still?  Is it necessary on every AddStateUpdate?
     if (!pkgs.at("GRMHD")->Param<bool>("implicit")) {
         t_copy_prims = tl.AddTask(t_start, Copy<MeshData<Real>>,
-                                    std::vector<MetadataFlag>({Metadata::GetUserFlag("HD"), Metadata::GetUserFlag("Primitive")}),
+                                    std::vector<MetadataFlag>({Metadata::GetUserFlag("MHD"), Metadata::GetUserFlag("Primitive")}),
                                     md_sub_step_init, md_update);
     }
 

@@ -1,25 +1,25 @@
-/* 
+/*
  *  File: problem.cpp
- *  
+ *
  *  BSD 3-Clause License
- *  
+ *
  *  Copyright (c) 2020, AFD Group at UIUC
  *  All rights reserved.
- *  
+ *
  *  Redistribution and use in source and binary forms, with or without
  *  modification, are permitted provided that the following conditions are met:
- *  
+ *
  *  1. Redistributions of source code must retain the above copyright notice, this
  *     list of conditions and the following disclaimer.
- *  
+ *
  *  2. Redistributions in binary form must reproduce the above copyright notice,
  *     this list of conditions and the following disclaimer in the documentation
  *     and/or other materials provided with the distribution.
- *  
+ *
  *  3. Neither the name of the copyright holder nor the names of its
  *     contributors may be used to endorse or promote products derived from
  *     this software without specific prior written permission.
- *  
+ *
  *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
  *  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  *  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -69,7 +69,7 @@ using namespace parthenon;
 
 void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
 {
-    auto rc = pmb->meshblock_data.Get();
+    auto rc = pmb->meshblock_data.Get("base");
     auto prob = pin->GetString("parthenon/job", "problem_id"); // Required parameter
     Flag("ProblemGenerator_"+prob);
     // Also just print this, it's important
@@ -154,12 +154,14 @@ void KHARMA::ProblemGenerator(MeshBlock *pmb, ParameterInput *pin)
     // If needed, they are applied within the problem-specific call.
     // See InitializeFMTorus in fm_torus.cpp for the details for torus problems.
 
-    // Note we no longer call PtoU here either, as GRMHD variables' PtoU requires
-    // the magnetic field, which is added in PostInitialize, after all blocks
-    // are filled with other variables (it can be related to density averages which
-    // require correct ghost zones)
-    // If the B field will depend on the conserved variables (for some reason?)
-    // they must be computed by the particular problem.
+    // This is a temporary PtoU call.  It will underestimate T^0_0 for magnetized
+    // problems, since the magnetic field is not yet initialized.
+    // However, the polar mitigations expect P,U in a consistent state,
+    // so we have to give them something.
+    // Problems with Dirichlet boundaries should just initialize the whole grid,
+    // and the boundaries will be "frozen in" here (and re-frozen if B is added later)
+    Flux::BlockPtoU(rc.get(), IndexDomain::entire);
+    KBoundaries::FreezeDirichletBlock(rc.get());
 
     EndFlag();
 }
