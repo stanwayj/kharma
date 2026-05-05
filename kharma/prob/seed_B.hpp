@@ -52,9 +52,9 @@ TaskStatus NormalizeBField(MeshData<Real> *md, ParameterInput *pin);
 
 // Internal representation of the field initialization preference, used for templating
 enum BSeedType{constant, monopole, orszag_tang, orszag_tang_a, wave, shock_tube,
-                sane, mad, mad_quadrupole, r3s3, r5s5, gaussian, bz_monopole, vertical, r1s2};
+                sane, mad, mad_quadrupole, r3s3, r5s5, gaussian, bz_monopole, vertical, r1s2, multiloop};
 
-#define SEEDA_ARGS GReal *x, const GReal *dxc, double rho, double rin, double min_A, double A0, double arg1, double rb
+#define SEEDA_ARGS GReal *x, const GReal *dxc, double rho, double rin, double min_A, double A0, double arg1, double rb, double n_loops, double multiloop_len_scale
 
 // This will also act as the default implementation for unspecified types,
 // which should all be filled as B field by seed_b below.
@@ -135,6 +135,14 @@ KOKKOS_INLINE_FUNCTION Real seed_a<BSeedType::orszag_tang_a>(SEEDA_ARGS)
 {
     return A0 * (-0.5 * std::cos(2*x[1] + arg1)
                         + std::cos(x[2] + arg1));
+}
+
+// Nathanail et al 2022 multiloop magnetic field.
+template<>
+KOKKOS_INLINE_FUNCTION Real seed_a<BSeedType::multiloop>(SEEDA_ARGS)
+{
+    return m::max(rho - min_A, 0.) * m::cos((n_loops - 1.) * x[2]) *
+            m::sin((2. * M_PI * (x[1] - rin)) / multiloop_len_scale);
 }
 
 #undef SEEDA_ARGS

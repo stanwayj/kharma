@@ -218,7 +218,7 @@ TaskStatus SeedBFieldType(MeshBlockData<Real> *rc, ParameterInput *pin, IndexDom
         Real A0 = pin->GetOrAddReal("b_field", "A0", 0.);
         Real min_A = pin->GetOrAddReal("b_field", "min_A", 0.2);
         // Init-specific loads
-        Real a, rin, rmax, gam, kappa, rho_norm, arg1, n, rs, rb;
+        Real a, rin, rmax, gam, kappa, rho_norm, arg1, n, rs, rb, n_loops, multiloop_len_scale;
         Real tilt = 0; // Needs to be initialized
         switch (Seed) {
         case BSeedType::sane:
@@ -240,6 +240,10 @@ TaskStatus SeedBFieldType(MeshBlockData<Real> *rc, ParameterInput *pin, IndexDom
         case BSeedType::orszag_tang_a:
             A0 = pin->GetReal("orszag_tang", "tscale");
             arg1 = pin->GetReal("orszag_tang", "phase");
+            break;
+        case BSeedType::multiloop:
+            n_loops = pin->GetOrAddReal("b_field", "n_loops", 3.);
+            multiloop_len_scale = pin->GetOrAddReal("b_field", "multiloop_lenght_scale", 2.);
             break;
         case BSeedType::r1s2:
             gam = pmb->packages.Get("GRMHD")->Param<Real>("gamma");
@@ -301,7 +305,7 @@ TaskStatus SeedBFieldType(MeshBlockData<Real> *rc, ParameterInput *pin, IndexDom
                     }
                 }
 
-                Real Aphi = seed_a<Seed>(Xmidplane, dxc, rho_av, rin, min_A, A0, arg1, rb);
+                Real Aphi = seed_a<Seed>(Xmidplane, dxc, rho_av, rin, min_A, A0, arg1, rb, n_loops, multiloop_len_scale);
 
                 if (tilt != 0.0) {
                     // This is *covariant* A_mu of an untilted disk
@@ -454,6 +458,8 @@ TaskStatus SeedBField(MeshData<Real> *md, ParameterInput *pin)
             status = SeedBFieldType<BSeedType::wave>(rc, pin);
         } else if (b_field_type == "shock_tube") {
             status = SeedBFieldType<BSeedType::shock_tube>(rc, pin);
+        } else if (b_field_type == "multiloop") {
+            status = SeedBFieldType<BSeedType::multiloop>(rc, pin);
         } else {
             throw std::invalid_argument("Magnetic field seed type not supported: " + b_field_type);
         }
